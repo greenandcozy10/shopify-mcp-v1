@@ -930,6 +930,143 @@ async def shopify_create_webhook(params: CreateWebhookInput) -> str:
         return _error(e)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# METAFIELDS
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ListMetafieldsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resource:     str           = Field(..., description="Resource type: products, variants, customers, orders, collections, shop")
+    resource_id:  Optional[int] = Field(default=None, description="Resource ID (leave empty for 'shop')")
+    namespace:    Optional[str] = Field(default=None, description="Filter by namespace, e.g. 'custom'")
+    key:          Optional[str] = Field(default=None, description="Filter by key")
+    limit:        Optional[int] = Field(default=50, ge=1, le=250)
+
+
+@mcp.tool(
+    name="shopify_list_metafields",
+    annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+)
+async def shopify_list_metafields(params: ListMetafieldsInput) -> str:
+    """List metafields for a resource (product, order, customer, collection, or shop)."""
+    try:
+        if params.resource == "shop":
+            endpoint = "metafields.json"
+        elif params.resource_id is None:
+            return "resource_id is required for all resources except 'shop'."
+        else:
+            endpoint = f"{params.resource}/{params.resource_id}/metafields.json"
+
+        p: Dict[str, Any] = {"limit": params.limit}
+        if params.namespace:
+            p["namespace"] = params.namespace
+        if params.key:
+            p["key"] = params.key
+
+        data       = await _request("GET", endpoint, params=p)
+        metafields = data.get("metafields", [])
+        return _fmt({"count": len(metafields), "metafields": metafields})
+    except Exception as e:
+        return _error(e)
+
+
+class SetMetafieldInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    resource:     str           = Field(..., description="Resource type: products, variants, customers, orders, collections, shop")
+    resource_id:  Optional[int] = Field(default=None, description="Resource ID (leave empty for 'shop')")
+    namespace:    str           = Field(..., description="Metafield namespace, e.g. 'custom'")
+    key:          str           = Field(..., description="Metafield key, e.g. 'subtitle'")
+    value:        str           = Field(..., description="Metafield value")
+    type:         str           = Field(..., description="Metafield type: single_line_text_field, multi_line_text_field, integer, json, boolean, url, color, date, etc.")
+
+
+@mcp.tool(
+    name="shopify_set_metafield",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+)
+async def shopify_set_metafield(params: SetMetafieldInput) -> str:
+    """Create or update a metafield on a resource (product, order, customer, collection, or shop)."""
+    try:
+        if params.resource == "shop":
+            endpoint = "metafields.json"
+        elif params.resource_id is None:
+            return "resource_id is required for all resources except 'shop'."
+        else:
+            endpoint = f"{params.resource}/{params.resource_id}/metafields.json"
+
+        body = {
+            "metafield": {
+                "namespace": params.namespace,
+                "key":       params.key,
+                "value":     params.value,
+                "type":      params.type,
+            }
+        }
+        data = await _request("POST", endpoint, body=body)
+        return _fmt(data.get("metafield", data))
+    except Exception as e:
+        return _error(e)
+
+
+class GetMetafieldInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    metafield_id: int = Field(..., description="The metafield ID to retrieve")
+
+
+@mcp.tool(
+    name="shopify_get_metafield",
+    annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+)
+async def shopify_get_metafield(params: GetMetafieldInput) -> str:
+    """Retrieve a single metafield by its ID."""
+    try:
+        data = await _request("GET", f"metafields/{params.metafield_id}.json")
+        return _fmt(data.get("metafield", data))
+    except Exception as e:
+        return _error(e)
+
+
+class UpdateMetafieldInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    metafield_id: int           = Field(..., description="The metafield ID to update")
+    value:        str           = Field(..., description="New value for the metafield")
+    type:         Optional[str] = Field(default=None, description="Metafield type (only needed if changing type)")
+
+
+@mcp.tool(
+    name="shopify_update_metafield",
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+)
+async def shopify_update_metafield(params: UpdateMetafieldInput) -> str:
+    """Update the value of an existing metafield by ID."""
+    try:
+        metafield: Dict[str, Any] = {"value": params.value}
+        if params.type:
+            metafield["type"] = params.type
+        data = await _request("PUT", f"metafields/{params.metafield_id}.json", body={"metafield": metafield})
+        return _fmt(data.get("metafield", data))
+    except Exception as e:
+        return _error(e)
+
+
+class DeleteMetafieldInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    metafield_id: int = Field(..., description="The metafield ID to delete")
+
+
+@mcp.tool(
+    name="shopify_delete_metafield",
+    annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": True},
+)
+async def shopify_delete_metafield(params: DeleteMetafieldInput) -> str:
+    """Permanently delete a metafield by ID."""
+    try:
+        await _request("DELETE", f"metafields/{params.metafield_id}.json")
+        return f"Metafield {params.metafield_id} deleted."
+    except Exception as e:
+        return _error(e)
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
